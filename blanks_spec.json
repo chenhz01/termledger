@@ -1,0 +1,805 @@
+{
+  "meta": {
+    "project": "term-identity",
+    "version": "0.2",
+    "created": "2026-10-13",
+    "structure": "19 blanks × 3 layers (ingest/govern/consume) = 57 pieces",
+    "status_vocab": {
+      "done": "实装+自测通过",
+      "skeleton": "工厂骨架动工级",
+      "spec": "仅规格"
+    }
+  },
+  "blanks": [
+    {
+      "id": "B01",
+      "name": "信源采集适配层",
+      "position": "上游",
+      "why": "radar 数据源封闭在自家 config，无人提供统一采集接口",
+      "pieces": [
+        {
+          "id": "B01-1",
+          "file": "adapter_gh",
+          "iface": [
+            "fetch_trending() -> list[dict]",
+            "fetch_repo_terms(repo) -> list[str]"
+          ],
+          "assert": [
+            "返回必含 stars/pushed_at",
+            "空结果返回[]不抛异常",
+            "确定性排序"
+          ],
+          "prio": "P1"
+        },
+        {
+          "id": "B01-2",
+          "file": "adapter_hn",
+          "iface": [
+            "fetch_front_page() -> list[dict]"
+          ],
+          "assert": [
+            "title去HTML实体",
+            "限速保护",
+            "离线返回缓存"
+          ],
+          "prio": "P2"
+        },
+        {
+          "id": "B01-3",
+          "file": "adapter_unified",
+          "iface": [
+            "ingest(sources: list) -> dict"
+          ],
+          "assert": [
+            "多源合并按时间戳去重",
+            "单源失败不拖垮全局",
+            "来源四级标注"
+          ],
+          "prio": "P1"
+        }
+      ]
+    },
+    {
+      "id": "B02",
+      "name": "术语抽取器",
+      "position": "上游",
+      "why": "radar 用正则集，缺 camel/版本号/中文混合的流式抽取",
+      "pieces": [
+        {
+          "id": "B02-1",
+          "file": "extractor_stream",
+          "iface": [
+            "extract(text) -> list[str]"
+          ],
+          "assert": [
+            "camelCase保留",
+            "版本号附着",
+            "停用词过滤"
+          ]
+        },
+        {
+          "id": "B02-2",
+          "file": "extractor_doc",
+          "iface": [
+            "extract_doc(md) -> dict"
+          ],
+          "assert": [
+            "标题加权",
+            "代码块黑名单",
+            "频次统计"
+          ]
+        },
+        {
+          "id": "B02-3",
+          "file": "extractor_batch",
+          "iface": [
+            "extract_many(texts) -> Counter"
+          ],
+          "assert": [
+            "批量确定性",
+            "空输入安全",
+            "TopN截断"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B03",
+      "name": "别名词典治理",
+      "position": "上游/治理",
+      "why": "term_ledger 内置词典是写死的，需外部化+冲突检测",
+      "pieces": [
+        {
+          "id": "B03-1",
+          "file": "dict_govern",
+          "iface": [
+            "load(path) -> dict",
+            "merge(a,b) -> dict",
+            "detect_conflicts(d) -> list"
+          ],
+          "assert": [
+            "同value多key合法",
+            "key=value自指报错",
+            "环检测"
+          ],
+          "status": "done"
+        },
+        {
+          "id": "B03-2",
+          "file": "dict_schema",
+          "iface": [
+            "validate(d) -> list[str]"
+          ],
+          "assert": [
+            "非法字符报错",
+            "空value报错",
+            "重复value列warning"
+          ]
+        },
+        {
+          "id": "B03-3",
+          "file": "dict_export",
+          "iface": [
+            "export(d, fmt) -> str"
+          ],
+          "assert": [
+            "json/yaml双向",
+            "roundtrip无损",
+            "排序确定"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B04",
+      "name": "语料锚定",
+      "position": "上游",
+      "why": "复用 tokenledger 模式：改一字节都对不上账",
+      "pieces": [
+        {
+          "id": "B04-1",
+          "file": "corpus_manifest",
+          "iface": [
+            "build(dir) -> dict"
+          ],
+          "assert": [
+            "sha256锚定",
+            "跳过隐藏文件",
+            "字节级确定"
+          ]
+        },
+        {
+          "id": "B04-2",
+          "file": "corpus_anchor",
+          "iface": [
+            "verify(manifest, dir) -> bool"
+          ],
+          "assert": [
+            "篡改检出",
+            "缺文件检出",
+            "新增文件警告"
+          ]
+        },
+        {
+          "id": "B04-3",
+          "file": "corpus_drift",
+          "iface": [
+            "diff(m1, m2) -> dict"
+          ],
+          "assert": [
+            "增删改三分",
+            "空diff合法",
+            "路径排序"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B05",
+      "name": "消歧辅助（词典冷启动）",
+      "position": "上游/治理",
+      "why": "别名词典从零怎么来？编辑距离+共现自动建议，人只做确认",
+      "pieces": [
+        {
+          "id": "B05-1",
+          "file": "suggest_editdist",
+          "iface": [
+            "suggest(t1, t2) -> float"
+          ],
+          "assert": [
+            "归一后比较",
+            "阈值可配",
+            "0-1区间"
+          ]
+        },
+        {
+          "id": "B05-2",
+          "file": "suggest_cocluster",
+          "iface": [
+            "suggest_pairs(docs) -> list"
+          ],
+          "assert": [
+            "共现频次排序",
+            "去自身配对",
+            "TopN"
+          ]
+        },
+        {
+          "id": "B05-3",
+          "file": "suggest_review",
+          "iface": [
+            "export_review(cands) -> md"
+          ],
+          "assert": [
+            "人审格式",
+            "批量去重",
+            "含证据上下文"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B06",
+      "name": "身份归一 ✅已实装",
+      "position": "中游核心",
+      "why": "term_ledger.py v0.1（10/10断言）",
+      "pieces": [
+        {
+          "id": "B06-1",
+          "file": "term_ledger",
+          "status": "done"
+        },
+        {
+          "id": "B06-2",
+          "file": "term_ledger_family",
+          "status": "done",
+          "note": "families()已含"
+        },
+        {
+          "id": "B06-3",
+          "file": "term_ledger_fp",
+          "status": "done",
+          "note": "fingerprint()已含"
+        }
+      ]
+    },
+    {
+      "id": "B07",
+      "name": "术语证真 ✅已实装",
+      "position": "中游核心",
+      "why": "term_verify.py（E1/E2/E0三级）",
+      "pieces": [
+        {
+          "id": "B07-1",
+          "file": "term_verify",
+          "status": "done"
+        },
+        {
+          "id": "B07-2",
+          "file": "verify_gh_source",
+          "status": "done",
+          "note": "gh_search已含"
+        },
+        {
+          "id": "B07-3",
+          "file": "verify_hf_source",
+          "status": "done",
+          "note": "hf_search已含"
+        }
+      ]
+    },
+    {
+      "id": "B08",
+      "name": "生命周期对账 ✅已实装",
+      "position": "中游核心",
+      "why": "lifecycle_bench.py（4/4护栏）",
+      "pieces": [
+        {
+          "id": "B08-1",
+          "file": "lifecycle_bench",
+          "status": "done"
+        },
+        {
+          "id": "B08-2",
+          "file": "lifecycle_surge",
+          "status": "done",
+          "note": "双判定已含"
+        },
+        {
+          "id": "B08-3",
+          "file": "lifecycle_fake",
+          "status": "done",
+          "note": "假爆发否决已含"
+        }
+      ]
+    },
+    {
+      "id": "B09",
+      "name": "家族图谱",
+      "position": "中游",
+      "why": "家族(family)→repo/org/作者关系图，版本谱系可视化",
+      "pieces": [
+        {
+          "id": "B09-1",
+          "file": "graph_build",
+          "iface": [
+            "build(families, repos) -> dict"
+          ],
+          "assert": [
+            "节点唯一",
+            "边去重",
+            "孤立点保留"
+          ]
+        },
+        {
+          "id": "B09-2",
+          "file": "graph_query",
+          "iface": [
+            "neighbors(g, node) -> list"
+          ],
+          "assert": [
+            "一度/二度查询",
+            "不存在节点返回空",
+            "环安全"
+          ]
+        },
+        {
+          "id": "B09-3",
+          "file": "graph_render",
+          "iface": [
+            "render_mermaid(g) -> str"
+          ],
+          "assert": [
+            "合法mermaid语法",
+            "节点截断",
+            "确定性输出"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B10",
+      "name": "冲突仲裁",
+      "position": "中游",
+      "why": "同一key多规范名冲突（大小写品牌之争）时谁赢需要规则",
+      "pieces": [
+        {
+          "id": "B10-1",
+          "file": "conflict_detect",
+          "iface": [
+            "find(claims) -> list"
+          ],
+          "assert": [
+            "同key不同value才报",
+            "单claim安全",
+            "含证据"
+          ]
+        },
+        {
+          "id": "B10-2",
+          "file": "conflict_vote",
+          "iface": [
+            "vote(claims) -> dict"
+          ],
+          "assert": [
+            "多数胜出",
+            "平票报undecided",
+            "权重可配"
+          ]
+        },
+        {
+          "id": "B10-3",
+          "file": "conflict_resolve",
+          "iface": [
+            "resolve(conflicts) -> dict"
+          ],
+          "assert": [
+            "结果可回滚",
+            "留痕",
+            "幂等"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B11",
+      "name": "增量对账",
+      "position": "中游",
+      "why": "跨日diff：新簇/消亡簇/身份漂移，radar只有当日快照",
+      "pieces": [
+        {
+          "id": "B11-1",
+          "file": "daydiff",
+          "iface": [
+            "diff(d1, d2) -> dict"
+          ],
+          "assert": [
+            "new/dead/moved三分",
+            "空快照安全",
+            "确定性"
+          ]
+        },
+        {
+          "id": "B11-2",
+          "file": "drift_detect",
+          "iface": [
+            "drift(hist) -> list"
+          ],
+          "assert": [
+            "漂移=同raw不同key",
+            "时间序保持",
+            "阈值可配"
+          ]
+        },
+        {
+          "id": "B11-3",
+          "file": "snapshot_merge",
+          "iface": [
+            "merge(snaps) -> dict"
+          ],
+          "assert": [
+            "按日合并",
+            "冲突取新",
+            "幂等"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B12",
+      "name": "多源口径对账",
+      "position": "中游",
+      "why": "GitHub星/HF下载/X转推口径不同，谁说同一个『热』需要对账",
+      "pieces": [
+        {
+          "id": "B12-1",
+          "file": "crosssource",
+          "iface": [
+            "join(gh, hf) -> dict"
+          ],
+          "assert": [
+            "key对齐",
+            "缺源标注",
+            "分位数输出"
+          ]
+        },
+        {
+          "id": "B12-2",
+          "file": "divergence",
+          "iface": [
+            "divergence(a, b) -> float"
+          ],
+          "assert": [
+            "0-1区间",
+            "同源=0",
+            "对称性"
+          ]
+        },
+        {
+          "id": "B12-3",
+          "file": "reconcile",
+          "iface": [
+            "reconcile(sources) -> report"
+          ],
+          "assert": [
+            "分歧>阈值必解释",
+            "账目闭合",
+            "可复现"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B13",
+      "name": "告警规则引擎",
+      "position": "下游",
+      "why": "幻觉词/真爆发/衰退该分级提醒，而不是一锅端日报",
+      "pieces": [
+        {
+          "id": "B13-1",
+          "file": "alert_rules",
+          "iface": [
+            "evaluate(verify_report, lifecycle_report) -> list[Alert]"
+          ],
+          "assert": [
+            "E0→高危",
+            "假爆发→中危",
+            "分级阈值可配"
+          ],
+          "status": "done"
+        },
+        {
+          "id": "B13-2",
+          "file": "alert_surge",
+          "iface": [
+            "surge_alerts(rows) -> list"
+          ],
+          "assert": [
+            "真爆发才报",
+            "去重",
+            "含置信"
+          ]
+        },
+        {
+          "id": "B13-3",
+          "file": "alert_digest",
+          "iface": [
+            "digest(alerts) -> str"
+          ],
+          "assert": [
+            "按级排序",
+            "截断保护",
+            "纯文本安全"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B14",
+      "name": "报告渲染",
+      "position": "下游",
+      "why": "暗色HTML/MD双格式，与项目交付规范对齐",
+      "pieces": [
+        {
+          "id": "B14-1",
+          "file": "render_html",
+          "iface": [
+            "render(data) -> html"
+          ],
+          "assert": [
+            "转义防XSS",
+            "暗色CSS变量",
+            "单文件自包含"
+          ]
+        },
+        {
+          "id": "B14-2",
+          "file": "render_md",
+          "iface": [
+            "render_md(data) -> str"
+          ],
+          "assert": [
+            "表格合法",
+            "链接转义",
+            "UTF-8"
+          ]
+        },
+        {
+          "id": "B14-3",
+          "file": "render_diff",
+          "iface": [
+            "render_diff(d1, d2) -> str"
+          ],
+          "assert": [
+            "增删改着色",
+            "空diff安全",
+            "确定性"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B15",
+      "name": "查询服务",
+      "position": "下游",
+      "why": "term→证真+簇+生命周期一体查询，CLI优先（瘦身=不建HTTP服务）",
+      "pieces": [
+        {
+          "id": "B15-1",
+          "file": "term_api",
+          "iface": [
+            "query(term) -> dict"
+          ],
+          "assert": [
+            "三件套一体输出",
+            "未知术语不抛异常",
+            "落盘可复现"
+          ],
+          "status": "done"
+        },
+        {
+          "id": "B15-2",
+          "file": "api_batch",
+          "iface": [
+            "query_many(terms) -> dict"
+          ],
+          "assert": [
+            "批量去重",
+            "逐条隔离异常",
+            "汇总计数"
+          ]
+        },
+        {
+          "id": "B15-3",
+          "file": "api_schema",
+          "iface": [
+            "schema() -> dict"
+          ],
+          "assert": [
+            "JSON Schema合法",
+            "版本号",
+            "示例可跑"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B16",
+      "name": "缓存与限速",
+      "position": "下游/基建",
+      "why": "gh/HF 调用成本高：缓存命中=省积分，限速=防封",
+      "pieces": [
+        {
+          "id": "B16-1",
+          "file": "cache_store",
+          "iface": [
+            "get(k), put(k, v)"
+          ],
+          "assert": [
+            "TTL过期",
+            "磁盘持久",
+            "并发安全(文件锁)"
+          ],
+          "status": "done"
+        },
+        {
+          "id": "B16-2",
+          "file": "rate_guard",
+          "iface": [
+            "allow() -> bool"
+          ],
+          "assert": [
+            "滑动窗口",
+            "超限拒绝不抛异常",
+            "剩余额度查询"
+          ]
+        },
+        {
+          "id": "B16-3",
+          "file": "offline_fallback",
+          "iface": [
+            "with_fallback(fn, cache) -> dict"
+          ],
+          "assert": [
+            "断网返回缓存",
+            "标注stale",
+            "不静默造假(F11)"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B17",
+      "name": "上游回馈",
+      "position": "下游",
+      "why": "消歧层回灌 new-term-radar：issue/PR 自动起草（对外动作仍需人工确认）",
+      "pieces": [
+        {
+          "id": "B17-1",
+          "file": "issue_gen",
+          "iface": [
+            "draft_issue(findings) -> str"
+          ],
+          "assert": [
+            "含复现命令",
+            "脱敏检查",
+            "含canary"
+          ]
+        },
+        {
+          "id": "B17-2",
+          "file": "pr_gen",
+          "iface": [
+            "draft_pr(patch) -> str"
+          ],
+          "assert": [
+            "diff格式合法",
+            "测试随附",
+            "不擅自提交"
+          ]
+        },
+        {
+          "id": "B17-3",
+          "file": "upstream_gate",
+          "iface": [
+            "gate(draft) -> bool"
+          ],
+          "assert": [
+            "五问预检",
+            "无授权硬拒",
+            "留痕"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B18",
+      "name": "评测基准",
+      "position": "下游",
+      "why": "消歧/证真准确率没有基准=自我感觉良好；固定fixture打分",
+      "pieces": [
+        {
+          "id": "B18-1",
+          "file": "bench_disambig",
+          "iface": [
+            "score(ledger) -> dict"
+          ],
+          "assert": [
+            "50对固定用例",
+            "准确率+误差",
+            "确定性"
+          ],
+          "status": "done"
+        },
+        {
+          "id": "B18-2",
+          "file": "bench_verify",
+          "iface": [
+            "score(verify) -> dict"
+          ],
+          "assert": [
+            "E0/E1/E2各含负例",
+            "误杀率单列",
+            "可复现"
+          ]
+        },
+        {
+          "id": "B18-3",
+          "file": "bench_report",
+          "iface": [
+            "report(scores) -> md"
+          ],
+          "assert": [
+            "分项+总分",
+            "含阈值线",
+            "金句突出"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B19",
+      "name": "中文化映射",
+      "position": "下游/治理",
+      "why": "中文圈术语（深度求索/通义千问）↔英文身份双向映射自动扩充",
+      "pieces": [
+        {
+          "id": "B19-1",
+          "file": "zh_extract",
+          "iface": [
+            "extract_zh(text) -> list"
+          ],
+          "assert": [
+            "中文品牌词识别",
+            "混排安全",
+            "确定性"
+          ]
+        },
+        {
+          "id": "B19-2",
+          "file": "zh_map",
+          "iface": [
+            "map_zh(en) -> list[str]"
+          ],
+          "assert": [
+            "双向查",
+            "未命中返回空",
+            "含拼音辅助"
+          ]
+        },
+        {
+          "id": "B19-3",
+          "file": "zh_validate",
+          "iface": [
+            "validate(pairs) -> list"
+          ],
+          "assert": [
+            "回译校验",
+            "冲突标注",
+            "人工确认队列"
+          ]
+        }
+      ]
+    }
+  ]
+}

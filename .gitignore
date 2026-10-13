@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+tmp/
+verify_report.json
+api_query_report.json
